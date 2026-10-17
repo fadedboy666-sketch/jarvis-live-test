@@ -179,7 +179,7 @@ async function startCamera() {
   const v = $("vid"); v.srcObject = camStream; v.style.display = "block"; await v.play();
   camTimer = setInterval(() => {
     if (ready && v.videoWidth) sendFrame(frameToJpeg(v, v.videoWidth, v.videoHeight, 768));
-  }, 1000);
+  }, 2000);
   $("cam").textContent = "Camera off";
 }
 function stopCamera() {

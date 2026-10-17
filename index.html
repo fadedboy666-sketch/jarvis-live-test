@@ -170,7 +170,9 @@ function frameToJpeg(source, w, h, maxSide, flip) {
   const scale = Math.min(1, maxSide / Math.max(w, h));
   const c = document.createElement("canvas");
   c.width = Math.round(w * scale); c.height = Math.round(h * scale);
-  c.getContext("2d").drawImage(source, 0, 0, c.width, c.height);
+    const g = c.getContext("2d");
+  if (flip) { g.translate(c.width, 0); g.scale(-1, 1); }
+  g.drawImage(source, 0, 0, c.width, c.height);
   return c.toDataURL("image/jpeg", 0.7).split(",")[1];
 }
 function sendFrame(b64) { send({ realtimeInput: { video: { data: b64, mimeType: "image/jpeg" } } }); }

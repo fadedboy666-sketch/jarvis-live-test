@@ -166,7 +166,7 @@ function cleanup() {
 }
 function endCall() { if (ws) { try { ws.close(); } catch (e) {} } cleanup(); status("Call ended."); }
 
-function frameToJpeg(source, w, h, maxSide) {
+function frameToJpeg(source, w, h, maxSide, flip) {
   const scale = Math.min(1, maxSide / Math.max(w, h));
   const c = document.createElement("canvas");
   c.width = Math.round(w * scale); c.height = Math.round(h * scale);

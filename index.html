@@ -183,7 +183,7 @@ async function startCamera() {
   } catch (e) { status("Camera blocked: " + e.message); return; }
   const v = $("vid"); v.srcObject = camStream; v.style.display = "block"; await v.play();
   camTimer = setInterval(() => {
-    if (ready && v.videoWidth) sendFrame(frameToJpeg(v, v.videoWidth, v.videoHeight, 768));
+    if (ready && v.videoWidth) sendFrame(frameToJpegv.videoHeight, 768, flipX)
   }, 2000);
   $("cam").textContent = "Camera off";
 }

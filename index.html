@@ -48,6 +48,7 @@ pre{margin:12px 0 0;white-space:pre-wrap;word-break:break-word;font-size:12px;co
 const $ = (id) => document.getElementById(id);
 let ws = null, ready = false, micStream = null, actx = null, proc = null;
 let pctx = null, nextT = 0, sources = [], camStream = null, camTimer = null;
+  let facing = "environment";
 
 function log(m) { const d = $("log"); d.textContent = m + "\n" + d.textContent.slice(0, 2000); }
 function status(m) { $("status").textContent = m; }

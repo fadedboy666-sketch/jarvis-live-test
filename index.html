@@ -50,6 +50,7 @@ const $ = (id) => document.getElementById(id);
 let ws = null, ready = false, micStream = null, actx = null, proc = null;
 let pctx = null, nextT = 0, sources = [], camStream = null, camTimer = null;
   let facing = "environment";
+  let flipX = false;
 
 function log(m) { const d = $("log"); d.textContent = m + "\n" + d.textContent.slice(0, 2000); }
 function status(m) { $("status").textContent = m; }

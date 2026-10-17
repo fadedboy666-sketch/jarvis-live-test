@@ -203,6 +203,7 @@ $("flip").onclick = async () => {
   facing = facing === "environment" ? "user" : "environment";
   if (camStream) { stopCamera(); await startCamera(); }
 };
+  $("mir").onclick = () => { flipX = !flipX; $("vid").style.transform = flipX ? "scaleX(-1)" : "none"; };
   $("file").onchange = async (e) => {
   const f = e.target.files && e.target.files[0]; e.target.value = "";
   if (!f) return;

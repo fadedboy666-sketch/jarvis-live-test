@@ -101,6 +101,7 @@ async function startCall() {
     send({ setup: {
       model: "models/" + $("model").value.trim(),
       generationConfig: { responseModalities: ["AUDIO"] },
+            contextWindowCompression: { slidingWindow: {} },
       systemInstruction: { parts: [{ text: "You are Jarvis, a casual, honest trading buddy. Keep spoken answers short. When you see a chart, describe what is actually visible, say plainly when you cannot read a number, and never present an opinion as a signal." }] },
     } });
   };

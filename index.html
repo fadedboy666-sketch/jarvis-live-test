@@ -175,7 +175,7 @@ function sendFrame(b64) { send({ realtimeInput: { video: { data: b64, mimeType: 
 
 async function startCamera() {
   try {
-    camStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false });
+    camStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: facing }, audio: false });
   } catch (e) { status("Camera blocked: " + e.message); return; }
   const v = $("vid"); v.srcObject = camStream; v.style.display = "block"; await v.play();
   camTimer = setInterval(() => {

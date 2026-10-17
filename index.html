@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Jarvis Live test</title>
+<style>
+:root{color-scheme:dark;--bg:#0b1014;--panel:#121a21;--line:#24323d;--fg:#e6eef3;--mut:#8397a4;--go:#35d49a;--stop:#ff5d6c;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:520px;margin:0 auto;padding:18px 16px 40px}
+h1{font-size:22px;margin:0 0 4px}
+p.sub{margin:0 0 18px;color:var(--mut);font-size:14px}
+label{display:block;margin:14px 0 6px;font-size:14px;color:var(--mut)}
+input[type=text],input[type=password]{width:100%;padding:12px;border-radius:10px;border:1px solid var(--line);background:var(--panel);color:var(--fg);font-size:16px}
+.row{display:flex;gap:10px;margin-top:16px}
+button{flex:1;padding:14px;border-radius:12px;border:1px solid var(--line);background:var(--panel);color:var(--fg);font-size:16px}
+button.main{background:var(--go);color:#04120c;border-color:var(--go);font-weight:600}
+button.main.on{background:var(--stop);border-color:var(--stop);color:#fff}
+video{width:100%;margin-top:14px;border-radius:12px;background:#000;display:none}
+#status{margin-top:16px;padding:12px;border-radius:10px;background:var(--panel);border:1px solid var(--line);font-size:14px}
+pre{margin:12px 0 0;white-space:pre-wrap;word-break:break-word;font-size:12px;color:var(--mut);max-height:220px;overflow:auto}
+</style>
+</head>
+<body>
+<main>
+<h1>Jarvis Live test</h1>
+<p class="sub">Talk to Gemini live, with your camera or a chart screenshot. Use headphones so it does not hear itself.</p>
+
+<label for="key">Gemini API key (stays in this page, never saved)</label>
+<input id="key" type="password" autocomplete="off" placeholder="Paste key here">
+
+<label for="model">Live model</label>
+<input id="model" type="text" value="gemini-3.1-flash-live-preview" autocapitalize="off" autocorrect="off">
+
+<div class="row"><button id="go" class="main">Start call</button></div>
+<div class="row">
+  <button id="cam">Camera on</button>
+  <button id="shot">Send screenshot</button>
+</div>
+<input id="file" type="file" accept="image/*" hidden>
+<video id="vid" playsinline muted></video>
+<div id="status">Not connected.</div>
+<pre id="log"></pre>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let ws = null, ready = false, micStream = null, actx = null, proc = null;
+let pctx = null, nextT = 0, sources = [], camStream = null, camTimer = null;
+
+function log(m) { const d = $("log"); d.textContent = m + "\n" + d.textContent.slice(0, 2000); }
+function status(m) { $("status").textContent = m; }
+function toB64(bytes) {
+  let s = ""; const c = 0x8000;
+  for (let i = 0; i < bytes.length; i += c) s += String.fromCharCode.apply(null, bytes.subarray(i, i + c));
+  return btoa(s);
+}
+function fromB64(s) {
+  const bin = atob(s), a = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) a[i] = bin.charCodeAt(i);
+  return a;
+}
+function send(obj) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj)); }
+
+function playPcm(bytes) {
+  const pcm = new Int16Array(bytes.buffer, bytes.byteOffset, bytes.byteLength >> 1);
+  const f = new Float32Array(pcm.length);
+  for (let i = 0; i < pcm.length; i++) f[i] = pcm[i] / 32768;
+  const buf = pctx.createBuffer(1, f.length, 24000);
+  buf.copyToChannel(f, 0);
+  const s = pctx.createBufferSource();
+  s.buffer = buf; s.connect(pctx.destination);
+  nextT = Math.max(nextT, pctx.currentTime);
+  s.start(nextT); nextT += buf.duration;
+  sources.push(s);
+  s.onended = () => { sources = sources.filter((x) => x !== s); };
+}
+function stopPlayback() {
+  sources.forEach((s) => { try { s.stop(); } catch (e) {} });
+  sources = []; nextT = 0;
+}
+
+async function startCall() {
+  const key = $("key").value.trim();
+  if (!key) { status("Paste your Gemini key first."); return; }
+  try {
+    micStream = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+    });
+  } catch (e) { status("Microphone blocked: " + e.message); return; }
+
+  const AC = window.AudioContext || window.webkitAudioContext;
+  pctx = new AC({ sampleRate: 24000 });
+  actx = new AC();
+  status("Connecting...");
+  const url = "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=" + encodeURIComponent(key);
+  ws = new WebSocket(url);
+
+  ws.onopen = () => {
+    send({ setup: {
+      model: "models/" + $("model").value.trim(),
+      generationConfig: { responseModalities: ["AUDIO"] },
+      systemInstruction: { parts: [{ text: "You are Jarvis, a casual, honest trading buddy. Keep spoken answers short. When you see a chart, describe what is actually visible, say plainly when you cannot read a number, and never present an opinion as a signal." }] },
+    } });
+  };
+
+  ws.onmessage = async (ev) => {
+    const txt = typeof ev.data === "string" ? ev.data : await ev.data.text();
+    let msg; try { msg = JSON.parse(txt); } catch (e) { return; }
+    if (msg.setupComplete) { ready = true; status("Live. Start talking."); startMic(); return; }
+    const sc = msg.serverContent;
+    if (sc) {
+      if (sc.interrupted) stopPlayback();
+      const parts = (sc.modelTurn && sc.modelTurn.parts) || [];
+      for (const p of parts) {
+        const d = p.inlineData && p.inlineData.data;
+        if (d) playPcm(fromB64(d));
+      }
+    }
+  };
+  ws.onerror = () => log("Socket error.");
+  ws.onclose = (e) => {
+    log("Closed " + e.code + " " + (e.reason || ""));
+    if (ready) status("Call ended."); else status("Could not connect: " + (e.reason || "code " + e.code) + ". Check the key and the model name.");
+    cleanup();
+  };
+
+  $("go").textContent = "End call";
+  $("go").classList.add("on");
+}
+
+function startMic() {
+  const src = actx.createMediaStreamSource(micStream);
+  proc = actx.createScriptProcessor(4096, 1, 1);
+  proc.onaudioprocess = (e) => {
+    if (!ready) return;
+    const f = e.inputBuffer.getChannelData(0);
+    const ratio = actx.sampleRate / 16000;
+    const n = Math.floor(f.length / ratio);
+    const out = new Int16Array(n);
+    for (let i = 0; i < n; i++) {
+      const v = Math.max(-1, Math.min(1, f[Math.floor(i * ratio)]));
+      out[i] = v < 0 ? v * 32768 : v * 32767;
+    }
+    send({ realtimeInput: { audio: { data: toB64(new Uint8Array(out.buffer)), mimeType: "audio/pcm;rate=16000" } } });
+  };
+  src.connect(proc); proc.connect(actx.destination);
+}
+
+function cleanup() {
+  ready = false;
+  try { if (proc) proc.disconnect(); } catch (e) {}
+  if (micStream) micStream.getTracks().forEach((t) => t.stop());
+  stopCamera();
+  stopPlayback();
+  try { if (actx) actx.close(); } catch (e) {}
+  try { if (pctx) pctx.close(); } catch (e) {}
+  proc = null; micStream = null; actx = null; pctx = null;
+  $("go").textContent = "Start call";
+  $("go").classList.remove("on");
+}
+function endCall() { if (ws) { try { ws.close(); } catch (e) {} } cleanup(); status("Call ended."); }
+
+function frameToJpeg(source, w, h, maxSide) {
+  const scale = Math.min(1, maxSide / Math.max(w, h));
+  const c = document.createElement("canvas");
+  c.width = Math.round(w * scale); c.height = Math.round(h * scale);
+  c.getContext("2d").drawImage(source, 0, 0, c.width, c.height);
+  return c.toDataURL("image/jpeg", 0.7).split(",")[1];
+}
+function sendFrame(b64) { send({ realtimeInput: { video: { data: b64, mimeType: "image/jpeg" } } }); }
+
+async function startCamera() {
+  try {
+    camStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false });
+  } catch (e) { status("Camera blocked: " + e.message); return; }
+  const v = $("vid"); v.srcObject = camStream; v.style.display = "block"; await v.play();
+  camTimer = setInterval(() => {
+    if (ready && v.videoWidth) sendFrame(frameToJpeg(v, v.videoWidth, v.videoHeight, 768));
+  }, 1000);
+  $("cam").textContent = "Camera off";
+}
+function stopCamera() {
+  clearInterval(camTimer); camTimer = null;
+  if (camStream) camStream.getTracks().forEach((t) => t.stop());
+  camStream = null;
+  $("vid").style.display = "none";
+  $("cam").textContent = "Camera on";
+}
+
+$("go").onclick = () => (ws && ws.readyState <= 1 ? endCall() : startCall());
+$("cam").onclick = () => { if (!ready) { status("Start the call first."); return; } camStream ? stopCamera() : startCamera(); };
+$("shot").onclick = () => { if (!ready) { status("Start the call first."); return; } $("file").click(); };
+$("file").onchange = async (e) => {
+  const f = e.target.files && e.target.files[0]; e.target.value = "";
+  if (!f) return;
+  const bmp = await createImageBitmap(f);
+  const b64 = frameToJpeg(bmp, bmp.width, bmp.height, 1280);
+  sendFrame(b64); setTimeout(() => sendFrame(b64), 1000); setTimeout(() => sendFrame(b64), 2000);
+  status("Screenshot sent. Ask about it.");
+};
+</script>
+</body>
+</html>
